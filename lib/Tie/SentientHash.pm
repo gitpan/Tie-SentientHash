@@ -1,14 +1,265 @@
-package Tie::SentientHash;
-
-# 'intelligent' hashes that track changes, etc
-
-$VERSION = 0.53;
-
-# $Id: SentientHash.pm,v 1.3 1999/08/09 10:36:44 andrew Exp $
+# Tie::SentientHash -- 'intelligent' hashes that track changes, etc
 #
-# Copyright (C) 1999, Ford & Mason Ltd.  All rights reserved
+# $Id: SentientHash.pm,v 1.7 2001/01/26 11:12:16 andrew Exp $
+# Copyright (C) 1999-2001, Andrew Ford and Ford & Mason Ltd.  
+# All rights reserved
 # This module is free software. It may be used, redistributed
 # and/or modified under the terms of the Perl Artistic License
+
+package Tie::SentientHash;
+$VERSION = 0.54;
+
+
+=head1 NAME
+
+Tie::SentientHash - Perl module implementing intelligent objects
+
+=head1 SYNOPSIS
+
+  use Tie::SentientHash;
+
+  tie %hash, 'Tie::SentientHash', $meta_data, $initial_data;
+
+  $hashref    = Tie::SentientHash->new($meta_data, $initial_data);
+  $modified   = $hashref->modified($key [, $bool])
+  $untiedhash = $hashref->export;
+  $metadata   = $hashref->_metadata;
+  $modified   = $hashref->_modified;
+
+  $hashref->{key} = 'value';
+  $hashref->{key1}{key2} = $value;
+  $value2 = $hashref->{key};
+  undef $hashref;
+
+
+=head1 DESCRIPTION
+
+The C<Tie::SentientHash> package provides intelligent objects.  The
+objects are represented as hashes which:
+
+=over
+
+=item * 
+
+provide read-only elements
+
+=item *
+
+provide 'special' elements that are handled by user-supplied functions
+
+=item *
+
+disallow changes to the data as specified by metadata
+
+=item *
+
+track changes and call a 'commit changes' function when the object is
+destroyed
+
+=back
+
+References to scalars, arrays, hashes and objects can be stored in
+hash elements in which case the referenced object is tied to an
+internal class of the appropriate type (Tie::SentientHash::NestedHash,
+::NestedArray or ::NestedScalar), so that changes to the nested data
+structures can be tracked.
+
+The constructor is invoked with two hash references: the first
+contains metadata and the second the initial data values.  The
+metadata hash may contain the following flags:
+
+=over 4
+
+=item READONLY
+
+a list of hash entries that are read-only (read-only elements cannot
+be modified -- except by special element handlers -- or deleted and
+are not deleted when the CLEAR method is called)
+
+=item SPECIAL
+
+a hash of name/subroutine-refs pairs that specifies elements that are
+handled specially (special elements also cannot be deleted).  The user
+function is called both for STORE (with four arguments) and for FETCH
+(with three arguments).  The arguments are: a reference to the
+metadata hash, a reference to the data hash, the element key and if
+the funtion is being called for a STORE operation, the value to be
+stored.  SPECIAL elements can be used to implement calculated
+attributes.
+
+=item TRACK_CHANGES 
+
+flag to indicate that the class should keep track of the keys of
+modified (top-level) hash elements
+
+=item COMMIT_SUB
+
+a reference to a subroutine to commit changes (called with a reference
+to the data hash and a reference to the metadata hash)
+
+=item FORBID_INSERTS
+
+forbid inserts into hash and sub-hashes/arrays
+
+=item FORBID_DELETES
+
+forbid deletes from hash
+
+=item FORBID_CHANGES
+
+forbid any changes
+
+=back
+
+Trying to change an object in a way that is forbidden by the metadata
+will cause the module to croak.
+
+Changes are only tracked at the top level.
+
+
+The API is as follows:
+
+=over 4
+
+=item tie %hash, 'Tie::SentientHash', $meta_data, $initial_data
+
+Functional interface to create a new sentient hash.  $meta_data
+describes the properties of the sentient hash (as outlined above) and
+$initial_data is the initial content of the sentient hash.
+
+
+=item Tie::SentientHash->new($meta_data, $initial_data)
+
+Object oriented constructor for a sentient hash.
+
+
+=item $hashref->modified([$key [, $bool]])
+
+If called with no arguments in a scalar returns an indication of
+whether the sentient hash has been modified.  If called with no
+arguments in an array context returns the list of elements that have
+been modified.  Otherwise queries or sets the modification status of a
+specific top level element.
+
+=item $untiedhash = $hashref->export
+
+Creates an "untied" copy of the sentient hash.
+
+=back
+
+If a commit function is specified when the sentient hash is created it
+will be called when the destructor is called (normall when it is
+garbage-collected).
+
+
+=head1 EXAMPLE
+
+I use Tie::SentientHash as the basis for implementing persistent
+objects in my CGI/mod_perl scripts.  The details of reading and
+writing the objects from and to the database is handled by a class,
+but neither the class nor the high level code needs to keep track of
+whether the object has been changed in any way.
+
+For example if you had a pay per view system of some kind you could
+have a script that contained the following fragment:
+
+   sub pay_per_view ($$) {
+     my($cust_id, $cost) = @_;
+
+     my $cust = load Customer $cust_id;
+     $cust->{CREDIT} -= $cost;
+   }
+
+The customer object would be implemented in a module sketched out
+below.  A commit function is specified on the call to create a new
+sentient object, and that function will be called when $cust goes out
+of scope at the end of the pay_per_view function and can write the
+modified object back to the database.  If none of the attributes had
+been modified then the commit function would not be invoked.
+
+   package Customer;
+
+   sub load ($$) {
+     my ($class, $cust_id) = @_;
+     my $data = {};
+
+     # read customer data from a database into $data
+
+     my $meta = { COMMIT_SUB     => \&_commit,
+                  READONLY       => [ qw( CUST_ID ) ],
+                  FORBID_INSERTS => 1 };
+
+     return bless Tie::SentientHash->new($meta, $data), $class;
+   }
+
+   sub _commit ($$) {
+     my ($meta, $data) = @_;
+
+     # As we have been called, something has changed.  The names of
+     # the modified fields are the keys of $meta->{MODIFIED}.  We had
+     # better write the data back out to the database.
+ 
+   }
+
+
+=head1 RESTRICTIONS
+
+Full array semantics are only supported for Perl version 5.005.
+
+Starting with version 0.54 blessed objects may be stored in the
+I<sentient hash>, however this functionality is experimental, has not
+been exhaustively tested, may not work, and may be subject to change.
+Use at your own peril!
+
+Tie::SentientHash ties nested elements to internal subclasses so it
+can track changes.  If you keep references to such elements and modify
+them directly then Tie::SentientHash may not be aware of the changes.
+
+Objects of classes that use the tie mechanism may not work when stored
+in a sentient hash.
+
+If you use an object as the data for a new sentient hash, then the
+hash will not be re-blessed, i.e. if $object is an object then after
+
+    $href = Tie::SentientHash->new($meta, $object);
+
+$href will be blessed in the same class as $object.  This means you
+cannot use the C<modified> or C<export> methods on $href.  However you
+can use them on the tied array, e.g.:
+
+    @keys    = (tied %$href)->modified;
+    $newhash = (tied %$href)->export;
+
+As Tie::Sentient recursively ties nested elements to internal
+subclasses it may not be very efficent on large, deeply nested data
+structures.  (If I find the time I may provide a C implementation that
+would be faster in this regard).
+
+
+=head1 AUTHOR
+
+Andrew Ford <A.Ford@ford-mason.co.uk>
+
+Please let me know if you use this module.
+
+
+=head1 SEE ALSO
+
+perl(1).
+
+=head1 COPYRIGHT
+
+Copyright 1999-2001 Andrew Ford and Ford & Mason Ltd. All rights reserved.
+
+This library is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself.
+
+
+=cut
+
+
+
+#
 
 use strict;
 use vars qw($VERSION @ISA);
@@ -26,15 +277,18 @@ use constant WATCH_FN => 3;	# holds a reference to the watch
 
 my $pkg    = __PACKAGE__;
 my $nested = $pkg . '::Nested';
+my %builtin = ( map { $_ => 1 } qw( ARRAY HASH REF SCALAR ) );
 
 
 # Object oriented constructor
-# usage: $x = new Tie::SentientHash $metaref, $dataref
+# usage: $x = Tie::SentientHash->new($metaref, $dataref)
 
 sub new ($$$) {
     my($class, $meta, $data) = @_;
     my $this = {};
-
+    if (my $dataclass = ref $data) {
+	$class = $dataclass unless $builtin{$dataclass};
+    }
     tie %$this, $pkg, $meta, $data or croak 'cannot create tied hash';
     return bless $this, ref $class || $class;
 }
@@ -79,12 +333,11 @@ sub TIEHASH ($$;$) {
 
 sub _tie_ref ($$$$) {
     my($val, $readonly, $track_sub, $key) = @_;
-    my $ref     = ref $val;
-    $ref = 'SCALAR' if $ref eq 'REF';
-    my $package = __PACKAGE__ . "::Nested$ref";
-    my $newval;
+    my($newval, $package, $class);
 
-    if ($ref eq 'HASH') {
+    if (UNIVERSAL::isa($val, 'HASH')) {
+	$package = __PACKAGE__ . '::NestedHASH';
+	$class   = ref $val unless ref $val eq 'HASH';
 	if (tied %$val && ref tied %$val eq $package) {
 	    $newval = $val;
 	}
@@ -92,15 +345,20 @@ sub _tie_ref ($$$$) {
 	    tie(%$newval, $package, $val, $readonly, $track_sub, $key);
 	}
     }
-    elsif ($ref eq 'ARRAY') {
+    elsif (UNIVERSAL::isa($val, 'ARRAY')) {
+	$package = __PACKAGE__ . '::NestedARRAY';
+	$class   = ref $val unless ref $val eq 'ARRAY';
 	if (tied @$val && ref tied %$val eq $package) {
 	    $newval = $val;
 	}
 	else {
-	    tie(@$newval, $package, $val, $readonly, $track_sub, $key);
+	    tie(@$newval,  $package, $val, $readonly, $track_sub, $key);
 	}
     }
-    elsif ($ref eq 'SCALAR') {
+    elsif (   UNIVERSAL::isa($val, 'REF')
+	   or UNIVERSAL::isa($val, 'SCALAR')) {
+	$package = __PACKAGE__ . '::NestedSCALAR';
+	$class   = ref $val unless ref $val eq 'REF' or ref $val eq 'SCALAR';
 	if (tied $$val && ref tied %$val eq $package) {
 	    $newval = $val;
 	}
@@ -111,8 +369,9 @@ sub _tie_ref ($$$$) {
 	}
     }
     else {
-	croak('only references to ARRAY, HASH or SCALAR allowed');
+	croak('only references to ARRAY, HASH, REF or SCALAR allowed');
     }
+    bless $newval, $class if $class;
     return $newval;
 }
 
@@ -228,14 +487,17 @@ sub DESTROY ($) {
 	and ($meta->{COMMIT_ON_DESTROY} or keys %{$meta->{MODIFIED}})) {
 	while (my($key, $val) = each %$data) {
 	    next unless ref $val; 
-	    if (ref $val eq 'ARRAY') {
+	    if (UNIVERSAL::isa($val, 'ARRAY')) {
 		$data->{$key} = tied(@$val)->_UNTIE;
 	    }
-	    elsif (ref $val eq 'HASH') {
+	    elsif (UNIVERSAL::isa($val, 'HASH')) {
 		$data->{$key} = tied(%$val)->_UNTIE;
 	    }
-	    else {
+	    elsif (   UNIVERSAL::isa($val, 'REF')
+		   or UNIVERSAL::isa($val, 'SCALAR')) {
 		$data->{$key} = tied($$val)->_UNTIE;		
+	    }
+	    else {
 	    }
 	}
 	&{$meta->{'COMMIT_SUB'}}($meta, $data);
@@ -269,6 +531,48 @@ sub export ($) {
     return $export;
 }
 
+
+sub modified ($;$$) {
+    my($self, $key, $bool) = @_;
+    my $modified = $self->_modified;
+
+    if (defined $bool) {
+	my $data = $self->_data;
+	if (defined $key) {
+	    if ($bool) {
+		$modified->{$key} = 1;
+	    }
+	    else {
+		delete $modified->{$key};
+	    }
+	}
+	else {
+	    if ($bool) {
+		map { $modified->{$_} = $bool } (keys %$data);
+	    }
+	    else {
+		delete $modified->{keys %$modified};
+	    }
+	}
+    }
+    else {
+	return (defined $key
+		? exists $modified->{$key}
+		: (wantarray
+		   ? keys %$modified
+		   : (keys %$modified) > 0));
+    }
+}
+
+
+# Private function to access the modified hash of a SentientHash
+
+sub _modified ($) { 
+    my $self = shift;
+    $self = tied(%$self) if $self->isa('HASH');
+    return $self->_metadata->{MODIFIED};
+}
+
 # Private function to access the metadata hash of a SentientHash
 
 sub _metadata ($) {
@@ -277,12 +581,13 @@ sub _metadata ($) {
     return $self->[META];
 }
 
-# Private function to access the modified hash of a SentientHash
 
-sub _modified ($) { 
+# Private function to access the metadata hash of a SentientHash
+
+sub _data ($) {
     my $self = shift;
     $self = tied(%$self) if $self->isa('HASH');
-    return $self->_metadata->{MODIFIED};
+    return $self->[DATA];
 }
 
 
@@ -361,14 +666,18 @@ sub _UNTIE  ($) {
     
     while (my($key, $val) = each %$data) {
 	next unless ref $val;
-	if (ref $val eq 'ARRAY') {
+	if (UNIVERSAL::isa($val, 'ARRAY')) {
 	    $data->{$key} = tied(@$val)->_UNTIE;
 	}
-	elsif (ref $val eq 'HASH') {
+	elsif (UNIVERSAL::isa($val, 'HASH')) {
 	    $data->{$key} = tied(%$val)->_UNTIE;
 	}
-	else {
+	elsif (   UNIVERSAL::isa($val, 'REF') 
+	       or UNIVERSAL::isa($val, 'SCALAR')) {
 	    $data->{$key} = tied($$val)->_UNTIE;		
+	}
+	else {
+	    carp("something funny happened while untying a nested hash");
 	}
     }
     return $data;
@@ -381,16 +690,19 @@ sub _export ($) {
     my $export = {};
     
     while (my($key, $val) = each %$data) {
-	my $ref = ref $val;
-	if ($ref) {
-	    if ($ref =~ /HASH$/) {
+	if (ref $val) {
+	    if (UNIVERSAL::isa($val, 'HASH')) {
 		$val = tied(%$val)->_export;
 	    }
-	    elsif ($ref =~ /ARRAY$/) {
+	    elsif (UNIVERSAL::isa($val, 'ARRAY')) {
 		$val = tied(@$val)->_export;
 	    }
-	    else {
+	    elsif (   UNIVERSAL::isa($val, 'REF')
+		   or UNIVERSAL::isa($val, 'SCALAR')) {
 		$val = tied($$val)->_export;
+	    }
+	    else {
+		carp("something funny happened while exporting a nested hash");
 	    }
 	}
 	$export->{$key} = $val;
@@ -529,14 +841,18 @@ sub _UNTIE {
     
     foreach my $val (@$data) {
 	next unless ref $val;
-	if (ref $val eq 'ARRAY') {
+	if (UNIVERSAL::isa($val, 'ARRAY')) {
 	    $val = tied(@$val)->_UNTIE;
 	}
-	elsif (ref $val eq 'HASH') {
+	elsif (UNIVERSAL::isa($val, 'HASH')) {
 	    $val = tied(%$val)->_UNTIE;
 	}
-	else {
+	elsif (   UNIVERSAL::isa($val, 'REF')
+	       or UNIVERSAL::isa($val, 'SCALAR')) {
 	    $val = tied($$val)->_UNTIE;		
+	}
+	else {
+	    carp("something funny happened while untying a nested array");
 	}
     }
     return $data;
@@ -551,20 +867,21 @@ sub _export {
     my $export = [];
     
     foreach my $val (@$data) {
-	my $ref = ref $val;
-	if ($ref) {
-	    if ($ref =~ /HASH$/) {
-		push @$export, tied(%$val)->_export;
-	    }
-	    elsif ($ref =~ /ARRAY$/) {
-		push @$export, tied(@$val)->_export;
-	    }
-	    else {
-		push @$export, tied($$val)->_export;
-	    }
+	if (!ref $val) {
+	    push @$export, $val;
+	}
+	elsif (UNIVERSAL::isa($val, 'HASH')) {
+	    push @$export, tied(%$val)->_export;
+	}
+	elsif (UNIVERSAL::isa($val, 'ARRAY')) {
+	    push @$export, tied(@$val)->_export;
+	}
+	elsif (   UNIVERSAL::isa($val, 'REF')
+	       or UNIVERSAL::isa($val, 'SCALAR')) {
+	    push @$export, tied($$val)->_export;
 	}
 	else {
-	    push @$export, $val;
+	    carp("something funny happened while exporting a nested array");
 	}
     }
     return $export;
@@ -612,19 +929,24 @@ sub DESTROY {}
 
 sub _UNTIE {
     my $self = shift;
-    my $data = $self->[DATA];
+    my $val  = $self->[DATA];
 
-    return $data  unless ref $data;
-    if (ref $data eq 'ARRAY') {
-	return tied(@$data)->_UNTIE;
+    if (!ref $val) {
+	return $val;
     }
-    elsif (ref $data eq 'HASH') {
-	return tied(%$data)->_UNTIE;
+    elsif (UNIVERSAL::isa($val, 'ARRAY')) {
+	return tied(@$val)->_UNTIE;
+    }
+    elsif (UNIVERSAL::isa($val, 'HASH')) {
+	return tied(%$val)->_UNTIE;
+    }
+    elsif (   UNIVERSAL::isa($val, 'REF')
+	   or UNIVERSAL::isa($val, 'SCALAR')) {
+	return tied($$val)->_UNTIE;		
     }
     else {
-	return tied($$data)->_UNTIE;		
+	carp("something funny happened while untying a nested scalar");
     }
-	
 }
 
 
@@ -633,197 +955,25 @@ sub _UNTIE {
 sub _export ($) {
     my $self = shift;
     my $val = $self->[DATA];
-    my $ref  = ref $val;
-    return $val unless ($ref);
-    if ($ref =~ /HASH$/) {
+
+    if (!ref $val) {
+	return $val;
+    }
+    elsif (UNIVERSAL::isa($val, 'HASH')) {
 	return tied(%$val)->_export;
     }
-    elsif ($ref =~ /ARRAY$/) {
+    elsif (UNIVERSAL::isa($val, 'ARRAY')) {
 	return tied(@$val)->_export;
     }
-    else {
+    elsif (   UNIVERSAL::isa($val, 'REF')
+	   or UNIVERSAL::isa($val, 'SCALAR')) {
 	return tied($$val)->_export;
+    }
+    else {
+	carp("something funny happened while exporting a nested scalar");
     }
 }
 
 
 1;
 __END__
-
-=head1 NAME
-
-Tie::SentientHash - Perl module implementing intelligent objects
-
-=head1 SYNOPSIS
-
-  use Tie::SentientHash;
-
-  $hashref = new Tie::SentientHash $meta_data, $initial_data;
-  $untiedhash = $hashref->export;
-  $metadata   = $hashref->_metadata;
-
-  $hashref->{key} = 'value';
-  $hashref->{key1}{key2} = $value;
-  $value2 = $hashref->{key};
-  undef $hashref;
-
-
-=head1 DESCRIPTION
-
-The C<Tie::SentientHash> package provides intelligent objects.  The
-objects are represented as hashes which:
-
-=over
-
-=item * 
-
-provide read-only elements
-
-=item *
-
-provide 'special' elements that are handled by user-supplied functions
-
-=item *
-
-disallow changes to the data as specified by metadata
-
-=item *
-
-track changes and call a 'commit changes' function when the object is
-destroyed
-
-=back
-
-References to scalars, arrays and hashes can be stored in hash
-elements in which case the referenced object is tied to an internal
-class of the appropriate type (Tie::SentientHash::NestedHash,
-::NestedArray or ::NestedScalar), so that changes to the nested data
-structures can be tracked.
-
-The constructor is invoked with two hash references: the first
-contains metadata and the second the initial data values.  The
-metadata hash may contain the following flags:
-
-=over 4
-
-=item READONLY
-
-a list of hash entries that are read-only (read-only elements cannot
-be modified -- except by special element handlers -- or deleted and
-are not deleted when the CLEAR method is called)
-
-=item SPECIAL
-
-a hash of name/subroutine-refs pairs that specifies elements that are
-handled specially (special elements also cannot be deleted).  The user
-function is called both for STORE (with four arguments) and for FETCH
-(with three arguments).  The arguments are: a reference to the
-metadata hash, a reference to the data hash, the element key and if
-the funtion is being called for a STORE operation, the value to be
-stored.  SPECIAL elements can be used to implement calculated
-attributes.
-
-=item TRACK_CHANGES 
-
-flag to indicate that the class should keep track of the keys of
-modified (top-level) hash elements
-
-=item COMMIT_SUB
-
-a reference to a subroutine to commit changes (called with a reference
-to the data hash and a reference to the metadata hash)
-
-=item FORBID_INSERTS
-
-forbid inserts into hash and sub-hashes/arrays
-
-=item FORBID_DELETES
-
-forbid deletes from hash
-
-=item FORBID_CHANGES
-
-forbid any changes
-
-=back
-
-Trying to change an object in a way that is forbidden by the metadata
-will cause the module to croak.
-
-Changes are only tracked at the top level.
-
-
-
-=head1 EXAMPLE
-
-I use Tie::SentientHash as the basis for implementing persistent
-objects in my CGI/mod_perl scripts.  The details of reading and
-writing the objects from and to the database is handled by a class,
-but neither the class nor the high level code needs to keep track of
-whether the object has been changed in any way.
-
-For example if you had a pay per view system of some kind you could
-have a script that contained the following fragment:
-
-   sub pay_per_view ($$) {
-     my($cust_id, $cost) = @_;
-
-     my $cust = load Customer $cust_id;
-     $cust->{CREDIT} -= $cost;
-   }
-
-The customer object would be implemented in a module sketched out
-below.  A commit function is specified on the call to create a new
-sentient object, and that function will be called when $cust goes out
-of scope at the end of the pay_per_view function and can write the
-modified object back to the database.  If none of the attributes had
-been modified then the commit function would not be invoked.
-
-   package Customer;
-
-   sub load ($$) {
-     my ($class, $cust_id) = @_;
-     my $data = {};
-
-     # read customer data from a database into $data
-
-     my $meta = { COMMIT_SUB     => \&_commit,
-                  READONLY       => [ qw( CUST_ID ) ],
-                  FORBID_INSERTS => 1 };
-
-     return bless new Tie::SentientHash($meta, $data), $class;
-   }
-
-   sub _commit ($$) {
-     my ($meta, $data) = @_;
-
-     # As we have been called, something has changed.  The names of
-     # the modified fields are the keys of $meta->{MODIFIED}.  We had
-     # better write the data back out to the database.
- 
-   }
-
-
-=head1 RESTRICTIONS
-
-Full array semantics are only supported for Perl version 5.005.
-
-
-=head1 AUTHOR
-
-Andrew Ford <A.Ford@ford-mason.co.uk>
-
-=head1 SEE ALSO
-
-perl(1).
-
-=head1 COPYRIGHT
-
-Copyright 1999 Ford & Mason Ltd. All rights reserved.
-
-This library is free software; you can redistribute it and/or
-modify it under the same terms as Perl itself.
-
-
-=cut
-

@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-# $Id: test.pl,v 1.1 1999/06/21 09:23:56 andrew Exp $
+# $Id: test.pl,v 1.3 2001/01/18 17:54:57 andrew Exp $
 #
 
 # This is now mostly an empty shell I experiment with.
@@ -19,7 +19,7 @@ use vars qw($count $t $s);
 require Benchmark;
 print "Testing SentientHash creation/destruction speed...\n";
 
-$count = 5000;
+$count = 10000;
 
 $t = Benchmark::timeit($count, '$href =  {  }');
 $s = $t->cpu_a;

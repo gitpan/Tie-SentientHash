@@ -9,4 +9,6 @@ t/02nested-hashes.t
 t/03nested-scalars.t
 t/04nested-arrays.t
 t/05readonly.t
+t/06nested-objects.t
+t/07commit-save-restore.t
 test.pl

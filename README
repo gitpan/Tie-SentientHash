@@ -4,9 +4,13 @@ NAME
 SYNOPSIS
       use Tie::SentientHash;
 
-      $hashref = new Tie::SentientHash $meta_data, $initial_data;
+      tie %hash, 'Tie::SentientHash', $meta_data, $initial_data;
+
+      $hashref    = Tie::SentientHash->new($meta_data, $initial_data);
+      $modified   = $hashref->modified($key [, $bool])
       $untiedhash = $hashref->export;
       $metadata   = $hashref->_metadata;
+      $modified   = $hashref->_modified;
 
       $hashref->{key} = 'value';
       $hashref->{key1}{key2} = $value;
@@ -19,18 +23,19 @@ DESCRIPTION
 
     *   provide read-only elements
 
-    *   provide 'special' elements that are handled by user-supplied functions
+    *   provide 'special' elements that are handled by user-supplied
+        functions
 
     *   disallow changes to the data as specified by metadata
 
-    *   track changes and call a 'commit changes' function when the object is
-        destroyed
+    *   track changes and call a 'commit changes' function when the object
+        is destroyed
 
-    References to scalars, arrays and hashes can be stored in hash elements
-    in which case the referenced object is tied to an internal class of the
-    appropriate type (Tie::SentientHash::NestedHash, ::NestedArray or
-    ::NestedScalar), so that changes to the nested data structures can be
-    tracked.
+    References to scalars, arrays, hashes and objects can be stored in hash
+    elements in which case the referenced object is tied to an internal
+    class of the appropriate type (Tie::SentientHash::NestedHash,
+    ::NestedArray or ::NestedScalar), so that changes to the nested data
+    structures can be tracked.
 
     The constructor is invoked with two hash references: the first contains
     metadata and the second the initial data values. The metadata hash may
@@ -68,10 +73,127 @@ DESCRIPTION
     FORBID_CHANGES
         forbid any changes
 
+    Trying to change an object in a way that is forbidden by the metadata
+    will cause the module to croak.
+
     Changes are only tracked at the top level.
 
+    The API is as follows:
 
+    tie %hash, 'Tie::SentientHash', $meta_data, $initial_data
+        Functional interface to create a new sentient hash. $meta_data
+        describes the properties of the sentient hash (as outlined above)
+        and $initial_data is the initial content of the sentient hash.
 
+    Tie::SentientHash->new($meta_data, $initial_data)
+        Object oriented constructor for a sentient hash.
 
-Andrew Ford, 18/06/1999
-    
+    $hashref->modified([$key [, $bool]])
+        If called with no arguments in a scalar returns an indication of
+        whether the sentient hash has been modified. If called with no
+        arguments in an array context returns the list of elements that have
+        been modified. Otherwise queries or sets the modification status of
+        a specific top level element.
+
+    $untiedhash = $hashref->export
+        Creates an "untied" copy of the sentient hash.
+
+    If a commit function is specified when the sentient hash is created it
+    will be called when the destructor is called (normall when it is
+    garbage-collected).
+
+EXAMPLE
+    I use Tie::SentientHash as the basis for implementing persistent objects
+    in my CGI/mod_perl scripts. The details of reading and writing the
+    objects from and to the database is handled by a class, but neither the
+    class nor the high level code needs to keep track of whether the object
+    has been changed in any way.
+
+    For example if you had a pay per view system of some kind you could have
+    a script that contained the following fragment:
+
+       sub pay_per_view ($$) {
+         my($cust_id, $cost) = @_;
+
+         my $cust = load Customer $cust_id;
+         $cust->{CREDIT} -= $cost;
+       }
+
+    The customer object would be implemented in a module sketched out below.
+    A commit function is specified on the call to create a new sentient
+    object, and that function will be called when $cust goes out of scope at
+    the end of the pay_per_view function and can write the modified object
+    back to the database. If none of the attributes had been modified then
+    the commit function would not be invoked.
+
+       package Customer;
+
+       sub load ($$) {
+         my ($class, $cust_id) = @_;
+         my $data = {};
+
+         # read customer data from a database into $data
+
+         my $meta = { COMMIT_SUB     => \&_commit,
+                      READONLY       => [ qw( CUST_ID ) ],
+                      FORBID_INSERTS => 1 };
+
+         return bless Tie::SentientHash->new($meta, $data), $class;
+       }
+
+       sub _commit ($$) {
+         my ($meta, $data) = @_;
+
+         # As we have been called, something has changed.  The names of
+         # the modified fields are the keys of $meta->{MODIFIED}.  We had
+         # better write the data back out to the database.
+ 
+       }
+
+RESTRICTIONS
+    Full array semantics are only supported for Perl version 5.005.
+
+    Starting with version 0.54 blessed objects may be stored in the
+    *sentient hash*, however this functionality is experimental, has not
+    been exhaustively tested, may not work, and may be subject to change.
+    Use at your own peril!
+
+    Tie::SentientHash ties nested elements to internal subclasses so it can
+    track changes. If you keep references to such elements and modify them
+    directly then Tie::SentientHash may not be aware of the changes.
+
+    Objects of classes that use the tie mechanism may not work when stored
+    in a sentient hash.
+
+    If you use an object as the data for a new sentient hash, then the hash
+    will not be re-blessed, i.e. if $object is an object then after
+
+        $href = Tie::SentientHash->new($meta, $object);
+
+    $href will be blessed in the same class as $object. This means you
+    cannot use the `modified' or `export' methods on $href. However you can
+    use them on the tied array, e.g.:
+
+        @keys    = (tied %$href)->modified;
+        $newhash = (tied %$href)->export;
+
+    As Tie::Sentient recursively ties nested elements to internal subclasses
+    it may not be very efficent on large, deeply nested data structures. (If
+    I find the time I may provide a C implementation that would be faster in
+    this regard).
+
+AUTHOR
+    Andrew Ford <A.Ford@ford-mason.co.uk>
+
+    Please let me know if you use this module.
+
+SEE ALSO
+    perl(1).
+
+COPYRIGHT
+    Copyright 1999-2001 Andrew Ford and Ford & Mason Ltd. All rights
+    reserved.
+
+    This library is free software; you can redistribute it and/or modify it
+    under the same terms as Perl itself.
+
