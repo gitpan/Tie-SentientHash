@@ -1,0 +1,77 @@
+NAME
+    Tie::SentientHash - Perl module implementing intelligent objects
+
+SYNOPSIS
+      use Tie::SentientHash;
+
+      $hashref = new Tie::SentientHash $meta_data, $initial_data;
+      $untiedhash = $hashref->export;
+      $metadata   = $hashref->_metadata;
+
+      $hashref->{key} = 'value';
+      $hashref->{key1}{key2} = $value;
+      $value2 = $hashref->{key};
+      undef $hashref;
+
+DESCRIPTION
+    The `Tie::SentientHash' package provides intelligent objects. The
+    objects are represented as hashes which:
+
+    *   provide read-only elements
+
+    *   provide 'special' elements that are handled by user-supplied functions
+
+    *   disallow changes to the data as specified by metadata
+
+    *   track changes and call a 'commit changes' function when the object is
+        destroyed
+
+    References to scalars, arrays and hashes can be stored in hash elements
+    in which case the referenced object is tied to an internal class of the
+    appropriate type (Tie::SentientHash::NestedHash, ::NestedArray or
+    ::NestedScalar), so that changes to the nested data structures can be
+    tracked.
+
+    The constructor is invoked with two hash references: the first contains
+    metadata and the second the initial data values. The metadata hash may
+    contain the following flags:
+
+    READONLY
+        a list of hash entries that are read-only (read-only elements cannot
+        be modified -- except by special element handlers -- or deleted and
+        are not deleted when the CLEAR method is called)
+
+    SPECIAL
+        a hash of name/subroutine-refs pairs that specifies elements that
+        are handled specially (special elements also cannot be deleted). The
+        user function is called both for STORE (with four arguments) and for
+        FETCH (with three arguments). The arguments are: a reference to the
+        metadata hash, a reference to the data hash, the element key and if
+        the funtion is being called for a STORE operation, the value to be
+        stored. SPECIAL elements can be used to implement calculated
+        attributes.
+
+    TRACK_CHANGES
+        flag to indicate that the class should keep track of the keys of
+        modified (top-level) hash elements
+
+    COMMIT_SUB
+        a reference to a subroutine to commit changes (called with a
+        reference to the data hash and a reference to the metadata hash)
+
+    FORBID_INSERTS
+        forbid inserts into hash and sub-hashes/arrays
+
+    FORBID_DELETES
+        forbid deletes from hash
+
+    FORBID_CHANGES
+        forbid any changes
+
+    Changes are only tracked at the top level.
+
+
+
+
+Andrew Ford, 18/06/1999
+    

@@ -1,0 +1,12 @@
+Revision history for Perl extension Tie::SentientHash.
+
+0.53  Mon Aug 09 1999
+
+        - added missing code for tied nested structures.
+
+0.5   Fri Jun 18 1999
+	- first public release
+
+0.01  Mon Sep 14 21:58:47 1998
+	- original version; created by h2xs 1.18
+

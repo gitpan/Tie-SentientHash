@@ -1,0 +1,15 @@
+There are no prerequisites for Tie::SentientHash itself, however the
+test scripts use the modules:
+
+	Test
+	Data::Dumper
+
+Installation is performed with the standard sequence of commands:
+
+	perl Makefile.PL
+	make
+	make test
+	make install
+
+
+Andrew Ford, 18/06/1999
