@@ -3,6 +3,7 @@ MANIFEST
 Makefile.PL
 INSTALL
 README
+TODO
 lib/Tie/SentientHash.pm
 t/01basic.t
 t/02nested-hashes.t

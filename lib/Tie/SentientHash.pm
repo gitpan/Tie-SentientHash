@@ -1,13 +1,13 @@
 # Tie::SentientHash -- 'intelligent' hashes that track changes, etc
 #
-# $Id: SentientHash.pm,v 1.7 2001/01/26 11:12:16 andrew Exp $
+# $Id: SentientHash.pm,v 1.8 2001/01/26 15:59:43 andrew Exp $
 # Copyright (C) 1999-2001, Andrew Ford and Ford & Mason Ltd.  
 # All rights reserved
 # This module is free software. It may be used, redistributed
 # and/or modified under the terms of the Perl Artistic License
 
 package Tie::SentientHash;
-$VERSION = 0.54;
+$VERSION = 0.55;
 
 
 =head1 NAME
@@ -474,10 +474,14 @@ sub CLEAR ($) {
 # and secondly to untie the (anonymous) hash.  We can just return on
 # the first call, which is when we are called with a reference to the
 # tied hash.
+# Note: it would appear that something funny happens to the 'tied'ness
+# during global cleanup -- hence we check to see if the object is a
+# hash rather than whether it is tied.
 
 sub DESTROY ($) {
     my $self = shift;
-    return if tied(%$self);
+    return if $self->isa('HASH');
+    croak("self is a %s (%s)\n", ref $self, "$self") unless $self->isa('ARRAY');
     my $meta = $self->[META];
     my $data = $self->[DATA];
 
